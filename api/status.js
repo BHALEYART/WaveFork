@@ -1,6 +1,6 @@
 // Reports separation progress. Once the job ends, deletes the uploaded track.
 import { del } from '@vercel/blob';
-import { json, checkAccess, isOurUpload } from './_lib.js';
+import { json, checkAccess, isOurUpload, replicateToken, replicateError } from './_lib.js';
 
 const DONE = new Set(['succeeded', 'failed', 'canceled']);
 
@@ -22,10 +22,10 @@ export async function GET(request) {
   if (!/^[a-z0-9]+$/i.test(id)) return json({ error: 'Invalid job id.' }, 400);
 
   const res = await fetch(`https://api.replicate.com/v1/predictions/${id}`, {
-    headers: { Authorization: `Bearer ${process.env.REPLICATE_API_TOKEN}` },
+    headers: { Authorization: `Bearer ${replicateToken()}` },
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) return json({ error: data.detail || `Replicate returned ${res.status}.` }, 502);
+  if (!res.ok) return json({ error: replicateError(res.status, data) }, 502);
 
   if (DONE.has(data.status) && blob && isOurUpload(blob)) {
     await del(blob).catch(() => {}); // already gone is fine

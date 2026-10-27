@@ -48,3 +48,20 @@ export function isReplicateFile(url) {
     return false;
   }
 }
+
+// REPLICATE_API_TOKEN as pasted into Vercel, forgiving common paste mistakes:
+// surrounding whitespace or quotes, or a leading "Bearer ".
+export function replicateToken() {
+  const raw = process.env.REPLICATE_API_TOKEN || '';
+  return raw.trim().replace(/^["']|["']$/g, '').replace(/^Bearer\s+/i, '').trim();
+}
+
+export function replicateError(status, data) {
+  if (status === 401) {
+    return 'Replicate rejected the API token. In Vercel, re-copy REPLICATE_API_TOKEN from replicate.com/account/api-tokens (just the r8_… value), then redeploy.';
+  }
+  if (status === 402) {
+    return 'Replicate needs billing set up on your account before it can run models (replicate.com/account/billing).';
+  }
+  return data?.detail || `Replicate returned ${status}.`;
+}

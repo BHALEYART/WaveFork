@@ -1,5 +1,6 @@
 // Starts a Demucs stem separation on Replicate for an uploaded track.
-import { json, checkAccess, isOurUpload } from './_lib.js';
+import { del } from '@vercel/blob';
+import { json, checkAccess, isOurUpload, replicateToken, replicateError } from './_lib.js';
 
 // cjwbw/demucs. Override with REPLICATE_DEMUCS_VERSION to pin a newer build.
 const DEFAULT_VERSION = 'abf8fe28e407afa6d8e41e86a759caccc0af8e49c3c68016006b62cb0968441e';
@@ -13,7 +14,7 @@ export async function POST(request) {
   const denied = checkAccess(request);
   if (denied) return denied;
 
-  const token = process.env.REPLICATE_API_TOKEN;
+  const token = replicateToken();
   if (!token) return json({ error: 'Server is missing REPLICATE_API_TOKEN.' }, 500);
 
   let body;
@@ -48,7 +49,8 @@ export async function POST(request) {
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    return json({ error: data.detail || `Replicate returned ${res.status}.` }, 502);
+    await del(audioUrl).catch(() => {}); // the job never started, so nothing else will clean up the upload
+    return json({ error: replicateError(res.status, data) }, 502);
   }
   return json({ id: data.id });
 }
