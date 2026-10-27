@@ -38,6 +38,7 @@ const INSTRUMENT_STEMS = ['drums', 'bass', 'other', 'guitar', 'piano'];
 const COLORS = { vocals: '#FF3B3B', instrumental: '#DC143C', source: '#A38E90' };
 const AUDIO_EXT = /\.(mp3|wav|flac|m4a|aac|ogg|oga|opus|aif|aiff)$/i;
 const VIDEO_EXT = /\.(mp4|m4v|mov|webm|mkv)$/i;
+const SERVER_MISSING = "Splitting isn't available at this address because WaveFork's server isn't running here. Open WaveFork from its Vercel address instead.";
 
 const state = {
   file: null,   // what the user picked (audio or video)
@@ -47,6 +48,7 @@ const state = {
   current: null,
   busy: false,
   accessRequired: false,
+  serverMissing: false,
 };
 
 let audioCtx;
@@ -67,8 +69,12 @@ function accessCode() {
   return els.code.value.trim();
 }
 
-fetch('/api/config')
-  .then((r) => r.json())
+// Relative paths so the app works wherever it's hosted, root or subfolder.
+fetch('api/config')
+  .then((r) => {
+    if (!r.ok) throw new Error(String(r.status));
+    return r.json();
+  })
   .then(({ accessRequired }) => {
     state.accessRequired = accessRequired;
     if (accessRequired) {
@@ -76,7 +82,11 @@ fetch('/api/config')
       els.code.value = storedCode();
     }
   })
-  .catch(() => {});
+  .catch(() => {
+    // Static hosts (e.g. GitHub Pages) can't run the api/ functions.
+    state.serverMissing = true;
+    showError(SERVER_MISSING);
+  });
 
 async function api(path, options = {}) {
   const res = await fetch(path, {
@@ -170,6 +180,7 @@ async function pickFile(file) {
 els.form.addEventListener('submit', async (e) => {
   e.preventDefault();
   if (!state.upload || state.busy) return;
+  if (state.serverMissing) return showError(SERVER_MISSING);
   const mode = els.form.elements.mode.value;
   const quality = els.form.elements.quality.value;
   if (state.accessRequired && !accessCode()) {
@@ -186,7 +197,7 @@ els.form.addEventListener('submit', async (e) => {
     setStatus('Uploading 0%', 0);
     const blob = await upload(`uploads/${safeName(audio.name)}`, audio, {
       access: 'public',
-      handleUploadUrl: '/api/upload',
+      handleUploadUrl: 'api/upload',
       clientPayload: accessCode() || null,
       contentType: audio.type || guessType(audio.name),
       multipart: audio.size > 8 * 1024 * 1024,
@@ -194,7 +205,7 @@ els.form.addEventListener('submit', async (e) => {
     });
 
     setStatus('Starting separation', null);
-    const { id } = await api('/api/separate', {
+    const { id } = await api('api/separate', {
       method: 'POST',
       body: JSON.stringify({ audioUrl: blob.url, quality }),
     });
@@ -211,7 +222,7 @@ els.form.addEventListener('submit', async (e) => {
 
 async function poll(id, blobUrl) {
   const started = Date.now();
-  const path = `/api/status?id=${encodeURIComponent(id)}&blob=${encodeURIComponent(blobUrl)}`;
+  const path = `api/status?id=${encodeURIComponent(id)}&blob=${encodeURIComponent(blobUrl)}`;
   while (Date.now() - started < POLL_LIMIT_MS) {
     const job = await api(path);
     if (job.status === 'succeeded') return job.output;
@@ -231,7 +242,7 @@ async function poll(id, blobUrl) {
 }
 
 async function fetchStem(url) {
-  const res = await fetch(`/api/stem?url=${encodeURIComponent(url)}`, {
+  const res = await fetch(`api/stem?url=${encodeURIComponent(url)}`, {
     headers: { 'x-access-code': accessCode() },
   });
   if (!res.ok) throw new Error('Could not download a separated track. Try again.');
