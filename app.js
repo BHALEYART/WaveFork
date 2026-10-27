@@ -35,7 +35,7 @@ const MAX_VIDEO_BYTES = 500 * 1024 * 1024; // read locally, never uploaded
 const POLL_MS = 2500;
 const POLL_LIMIT_MS = 20 * 60 * 1000;
 const INSTRUMENT_STEMS = ['drums', 'bass', 'other', 'guitar', 'piano'];
-const COLORS = { vocals: '#FF8FA3', instrumental: '#6FD3C7', source: '#A99CBD' };
+const COLORS = { vocals: '#FF3B3B', instrumental: '#DC143C', source: '#A38E90' };
 const AUDIO_EXT = /\.(mp3|wav|flac|m4a|aac|ogg|oga|opus|aif|aiff)$/i;
 const VIDEO_EXT = /\.(mp4|m4v|mov|webm|mkv)$/i;
 
