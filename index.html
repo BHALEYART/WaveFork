@@ -28,15 +28,15 @@
   <main>
     <section class="intro">
       <h1>Split any song into vocals and instrumental.</h1>
-      <p>Upload a track and pick the half you want to keep. You get both halves either way, so you can switch back and forth once it's done.</p>
+      <p>Start from a song or a video and pick the half you want to keep. You get both halves either way, so you can switch back and forth once it's done.</p>
     </section>
 
     <section class="studio" aria-label="Separate a track">
       <div class="track" id="track" data-state="empty">
         <label class="drop" id="drop">
-          <input type="file" id="file" accept="audio/*,.mp3,.wav,.flac,.m4a,.aac,.ogg">
-          <span class="drop-main">Drop an audio file here or <u>choose one</u></span>
-          <span class="drop-sub">MP3, WAV, FLAC, M4A or OGG, up to 60 MB</span>
+          <input type="file" id="file" accept="audio/*,video/*,.mp3,.wav,.flac,.m4a,.aac,.ogg,.mp4,.m4v,.mov,.webm,.mkv">
+          <span class="drop-main">Drop a song or video here or <u>choose one</u></span>
+          <span class="drop-sub">MP3, WAV, FLAC, M4A, MP4, MOV or WebM. Audio up to 200 MB, video up to 500 MB.</span>
         </label>
 
         <div class="source" id="source" hidden>
@@ -106,7 +106,7 @@
       <audio id="audio" preload="auto"></audio>
     </section>
 
-    <p class="fine">Your upload is deleted from storage once separation finishes. Expect a little bleed between the halves on dense or heavily reverbed mixes. Only upload music you have the rights to use.</p>
+    <p class="fine">Videos stay on your device; only their audio is uploaded, and it's deleted from storage once separation finishes. Expect a little bleed between the halves on dense or heavily reverbed mixes. Only upload music you have the rights to use.</p>
   </main>
 </body>
 </html>

@@ -9,7 +9,7 @@ One separation produces both halves, so you can flip between them (playback keep
 
 ## How it works
 
-1. The browser uploads the track straight to **Vercel Blob**, which avoids the 4.5 MB request limit on Vercel Functions.
+1. The browser uploads the track straight to **Vercel Blob**, which avoids the 4.5 MB request limit on Vercel Functions. For a **video** (MP4, MOV, WebM, and MKV where the browser supports it, up to 500 MB), the browser extracts the soundtrack locally and uploads only that as a WAV. The video itself is never uploaded.
 2. `/api/separate` starts **Demucs** (`cjwbw/demucs` on Replicate) with Fast = `htdemucs` and Best = `htdemucs_ft`, which is cleaner but roughly 4× slower.
 3. `/api/status` is polled for progress. When the job ends, the uploaded track is deleted from Blob.
 4. The stems are streamed through `/api/stem`, a same-origin proxy that avoids relying on Replicate's CORS settings.
@@ -19,7 +19,7 @@ One separation produces both halves, so you can flip between them (playback keep
 index.html, styles.css, app.js   UI
 audio.js                         stem mixing, WAV encoding, waveform peaks (no DOM, testable in Node)
 vendor/blob-client.js            bundled @vercel/blob upload client (rebuild with `npm run vendor`)
-api/upload.js                    Blob client-upload tokens (audio only, 60 MB max)
+api/upload.js                    Blob client-upload tokens (audio only, 200 MB max)
 api/separate.js                  starts the Replicate prediction
 api/status.js                    polls the prediction, deletes the upload when done
 api/stem.js                      edge proxy for stem files (replicate.delivery only)

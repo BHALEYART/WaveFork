@@ -3,7 +3,7 @@
 import { handleUpload } from '@vercel/blob/client';
 import { json, accessOk } from './_lib.js';
 
-const MAX_BYTES = 60 * 1024 * 1024;
+const MAX_BYTES = 200 * 1024 * 1024; // audio extracted from video arrives as WAV
 
 export async function POST(request) {
   let body;

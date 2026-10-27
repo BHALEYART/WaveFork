@@ -30,15 +30,18 @@ const els = {
   audio: $('#audio'),
 };
 
-const MAX_BYTES = 60 * 1024 * 1024;
+const MAX_BYTES = 200 * 1024 * 1024; // matches api/upload.js
+const MAX_VIDEO_BYTES = 500 * 1024 * 1024; // read locally, never uploaded
 const POLL_MS = 2500;
 const POLL_LIMIT_MS = 20 * 60 * 1000;
 const INSTRUMENT_STEMS = ['drums', 'bass', 'other', 'guitar', 'piano'];
 const COLORS = { vocals: '#FF8FA3', instrumental: '#6FD3C7', source: '#A99CBD' };
 const AUDIO_EXT = /\.(mp3|wav|flac|m4a|aac|ogg|oga|opus|aif|aiff)$/i;
+const VIDEO_EXT = /\.(mp4|m4v|mov|webm|mkv)$/i;
 
 const state = {
-  file: null,
+  file: null,   // what the user picked (audio or video)
+  upload: null, // the audio that gets uploaded
   sourcePeaks: null,
   stems: null, // { vocals: { url, peaks, duration, filename }, instrumental: {...} }
   current: null,
@@ -104,14 +107,20 @@ els.drop.addEventListener('drop', (e) => {
 
 async function pickFile(file) {
   if (!file || state.busy) return;
-  if (!(file.type.startsWith('audio/') || AUDIO_EXT.test(file.name))) {
-    return showError(`${file.name} isn't an audio file. Choose an MP3, WAV, FLAC, M4A or OGG.`);
+  const isVideo = file.type.startsWith('video/') || VIDEO_EXT.test(file.name);
+  const isAudio = !isVideo && (file.type.startsWith('audio/') || AUDIO_EXT.test(file.name));
+  if (!isAudio && !isVideo) {
+    return showError(`${file.name} isn't an audio or video file. Choose an MP3, WAV, FLAC, M4A, MP4, MOV or WebM.`);
   }
-  if (file.size > MAX_BYTES) {
-    return showError(`${file.name} is ${mb(file.size)}. The limit is 60 MB, so try an MP3 or a shorter track.`);
+  if (isAudio && file.size > MAX_BYTES) {
+    return showError(`${file.name} is ${mb(file.size)}. The limit for audio is 200 MB, so try an MP3 or a shorter track.`);
+  }
+  if (isVideo && file.size > MAX_VIDEO_BYTES) {
+    return showError(`${file.name} is ${mb(file.size)}. The limit for video is 500 MB, so try a shorter clip.`);
   }
 
   state.file = file;
+  state.upload = isAudio ? file : null;
   state.sourcePeaks = null;
   hideStatus();
   els.drop.hidden = true;
@@ -119,25 +128,48 @@ async function pickFile(file) {
   els.track.dataset.state = 'source';
   els.fileName.textContent = file.name;
   els.fileMeta.textContent = mb(file.size);
-  els.go.disabled = false;
+  els.go.disabled = isVideo;
   clearCanvas(els.sourceWave);
+  if (isVideo) setStatus('Extracting the audio from your video', null);
 
+  let buf;
   try {
-    const buf = await ctx().decodeAudioData(await file.arrayBuffer());
-    if (state.file !== file) return; // a newer pick replaced this one
-    state.sourcePeaks = computePeaks(channelsOf(buf));
-    els.fileMeta.textContent = `${clock(buf.duration)}, ${mb(file.size)}`;
-    drawWave(els.sourceWave, state.sourcePeaks, COLORS.source);
+    buf = await ctx().decodeAudioData(await file.arrayBuffer());
   } catch {
-    // The browser can't preview this format; Demucs may still handle it.
+    if (state.file !== file) return;
+    if (isVideo) {
+      state.file = null;
+      return showError(`Your browser couldn't read the audio in ${file.name}. Try Chrome or Firefox, or export the audio from the video first.`);
+    }
+    return; // The browser can't preview this audio format; Demucs may still handle it.
   }
+  if (state.file !== file) return; // a newer pick replaced this one
+
+  state.sourcePeaks = computePeaks(channelsOf(buf));
+  drawWave(els.sourceWave, state.sourcePeaks, COLORS.source);
+
+  if (isAudio) {
+    els.fileMeta.textContent = `${clock(buf.duration)}, ${mb(file.size)}`;
+    return;
+  }
+
+  // Only the soundtrack is uploaded; the video never leaves the device.
+  const wav = encodeWav({ channels: channelsOf(buf), sampleRate: buf.sampleRate, length: buf.length });
+  if (wav.byteLength > MAX_BYTES) {
+    state.file = null;
+    return showError(`The audio in ${file.name} runs ${clock(buf.duration)}, which is over the 200 MB upload limit. Try a clip under about 17 minutes.`);
+  }
+  state.upload = new File([wav], `${baseName(file.name)}.wav`, { type: 'audio/wav' });
+  els.fileMeta.textContent = `${clock(buf.duration)}, audio from video`;
+  hideStatus();
+  els.go.disabled = false;
 }
 
 // ---------- Splitting ----------
 
 els.form.addEventListener('submit', async (e) => {
   e.preventDefault();
-  if (!state.file || state.busy) return;
+  if (!state.upload || state.busy) return;
   const mode = els.form.elements.mode.value;
   const quality = els.form.elements.quality.value;
   if (state.accessRequired && !accessCode()) {
@@ -150,13 +182,14 @@ els.form.addEventListener('submit', async (e) => {
 
   try {
     const file = state.file;
+    const audio = state.upload; // the file itself, or the soundtrack pulled from a video
     setStatus('Uploading 0%', 0);
-    const blob = await upload(`uploads/${safeName(file.name)}`, file, {
+    const blob = await upload(`uploads/${safeName(audio.name)}`, audio, {
       access: 'public',
       handleUploadUrl: '/api/upload',
       clientPayload: accessCode() || null,
-      contentType: file.type || guessType(file.name),
-      multipart: file.size > 8 * 1024 * 1024,
+      contentType: audio.type || guessType(audio.name),
+      multipart: audio.size > 8 * 1024 * 1024,
       onUploadProgress: ({ percentage }) => setStatus(`Uploading ${Math.round(percentage)}%`, percentage),
     });
 
@@ -215,7 +248,7 @@ async function buildStems(output, originalName) {
     [output.vocals, ...others.map((name) => output[name])].map(fetchStem),
   );
 
-  const base = originalName.replace(/\.[^.]+$/, '') || 'track';
+  const base = baseName(originalName);
 
   // Blob copies the bytes before decodeAudioData detaches the buffer.
   const vocalFile = new Blob([vocalBytes], { type: 'audio/mpeg' });
@@ -352,7 +385,7 @@ function reset() {
     URL.revokeObjectURL(state.stems.vocals.url);
     URL.revokeObjectURL(state.stems.instrumental.url);
   }
-  Object.assign(state, { file: null, sourcePeaks: null, stems: null, current: null });
+  Object.assign(state, { file: null, upload: null, sourcePeaks: null, stems: null, current: null });
   els.file.value = '';
   els.track.dataset.state = 'empty';
   els.drop.hidden = false;
@@ -457,7 +490,7 @@ function hideStatus() {
 
 function setBusy(busy) {
   state.busy = busy;
-  els.go.disabled = busy || !state.file;
+  els.go.disabled = busy || !state.upload;
   els.go.textContent = busy ? 'Splitting…' : 'Split track';
   els.changeFile.disabled = busy;
   els.file.disabled = busy;
@@ -480,6 +513,8 @@ function friendly(err) {
 // ---------- Small utilities ----------
 
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+function baseName(name) { return name.replace(/\.[^.]+$/, '') || 'track'; }
 
 function mb(bytes) { return `${(bytes / 1024 / 1024).toFixed(1)} MB`; }
 
