@@ -1,9 +1,18 @@
 // Explains, in plain words, what's missing from a deployment's setup.
 // Returned to the browser because the Blob upload client hides server errors.
 
+// Vercel connects Blob stores in one of two ways:
+// - a read-write token (BLOB_READ_WRITE_TOKEN) → client-token uploads
+// - keyless OIDC (BLOB_STORE_ID + BLOB_WEBHOOK_PUBLIC_KEY) → presigned uploads
+export function uploadMode() {
+  if (process.env.BLOB_READ_WRITE_TOKEN) return 'token';
+  if (process.env.BLOB_STORE_ID && process.env.BLOB_WEBHOOK_PUBLIC_KEY) return 'presigned';
+  return null;
+}
+
 export function uploadProblem() {
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
-    return "Uploads aren't set up: this deployment has no BLOB_READ_WRITE_TOKEN. In Vercel, connect a Blob store to the project (Storage tab), then redeploy.";
+  if (!uploadMode()) {
+    return "Uploads aren't set up: no Blob store is connected to this deployment. In Vercel, connect a Blob store to the project (Storage tab), then redeploy.";
   }
   return null;
 }

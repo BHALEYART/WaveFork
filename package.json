@@ -4,9 +4,11 @@
   "private": true,
   "description": "Split any song into vocals and instrumental.",
   "type": "module",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
-    "vendor": "echo \"export { upload } from '@vercel/blob/client';\" > _entry.js && esbuild --bundle --format=esm --minify --platform=browser --legal-comments=none --outfile=vendor/blob-client.js _entry.js && rm _entry.js"
+    "vendor": "echo \"export { upload, uploadPresigned } from '@vercel/blob/client';\" > _entry.js && esbuild --bundle --format=esm --minify --platform=browser --legal-comments=none --outfile=vendor/blob-client.js _entry.js && rm _entry.js"
   },
   "dependencies": {
     "@vercel/blob": "^2.8.2"

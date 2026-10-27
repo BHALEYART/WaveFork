@@ -29,7 +29,7 @@ api/config.js                    tells the UI whether an access code is required
 ## Setup on Vercel
 
 1. Import the repo into Vercel. No framework preset or build command is needed.
-2. Go to **Storage → Create → Blob** and connect the store to this project. That sets `BLOB_READ_WRITE_TOKEN`.
+2. Go to **Storage → Create → Blob** (choose **Public** access, since Replicate downloads the upload by URL) and connect the store to this project. Either connection style works: a `BLOB_READ_WRITE_TOKEN`, or Vercel's keyless setup (`BLOB_STORE_ID` + `BLOB_WEBHOOK_PUBLIC_KEY`), which uses presigned uploads.
 3. Add these environment variables:
 
 | Variable | Required | Purpose |

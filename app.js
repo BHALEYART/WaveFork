@@ -1,4 +1,4 @@
-import { upload } from './vendor/blob-client.js'; // bundled @vercel/blob@2.8.2 client
+import { upload, uploadPresigned } from './vendor/blob-client.js'; // bundled @vercel/blob@2.8.2 client
 import { createMix, addInto, channelsOf, encodeWav, computePeaks } from './audio.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -50,6 +50,7 @@ const state = {
   accessRequired: false,
   serverMissing: false,
   setupProblem: null,
+  uploadMode: null, // 'token' or 'presigned', depending on how the Blob store is connected
 };
 
 let audioCtx;
@@ -76,8 +77,9 @@ fetch('api/config')
     if (!r.ok) throw new Error(String(r.status));
     return r.json();
   })
-  .then(({ accessRequired, setupProblem }) => {
+  .then(({ accessRequired, uploadMode, setupProblem }) => {
     state.accessRequired = accessRequired;
+    state.uploadMode = uploadMode;
     if (accessRequired) {
       els.codeRow.hidden = false;
       els.code.value = storedCode();
@@ -201,7 +203,8 @@ els.form.addEventListener('submit', async (e) => {
     const file = state.file;
     const audio = state.upload; // the file itself, or the soundtrack pulled from a video
     setStatus('Uploading 0%', 0);
-    const blob = await upload(`uploads/${safeName(audio.name)}`, audio, {
+    const send = state.uploadMode === 'presigned' ? uploadPresigned : upload;
+    const blob = await send(`uploads/${uniqueId()}-${safeName(audio.name)}`, audio, {
       access: 'public',
       handleUploadUrl: 'api/upload',
       clientPayload: accessCode() || null,
@@ -221,7 +224,7 @@ els.form.addEventListener('submit', async (e) => {
     showResults(mode);
   } catch (err) {
     let message = friendly(err);
-    if (/client token/i.test(err?.message || '')) message = (await uploadDiagnosis()) || message;
+    if (/client token|presigned url/i.test(err?.message || '')) message = (await uploadDiagnosis()) || message;
     showError(message);
   } finally {
     setBusy(false);
@@ -553,6 +556,10 @@ function clock(seconds) {
   if (!Number.isFinite(seconds)) return '0:00';
   const s = Math.floor(seconds);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+function uniqueId() {
+  return crypto.randomUUID?.().slice(0, 8) || Math.random().toString(36).slice(2, 10);
 }
 
 function safeName(name) {
