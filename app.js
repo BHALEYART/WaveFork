@@ -49,6 +49,7 @@ const state = {
   busy: false,
   accessRequired: false,
   serverMissing: false,
+  setupProblem: null,
 };
 
 let audioCtx;
@@ -75,11 +76,15 @@ fetch('api/config')
     if (!r.ok) throw new Error(String(r.status));
     return r.json();
   })
-  .then(({ accessRequired }) => {
+  .then(({ accessRequired, setupProblem }) => {
     state.accessRequired = accessRequired;
     if (accessRequired) {
       els.codeRow.hidden = false;
       els.code.value = storedCode();
+    }
+    if (setupProblem) {
+      state.setupProblem = setupProblem;
+      showError(setupProblem);
     }
   })
   .catch(() => {
@@ -181,6 +186,7 @@ els.form.addEventListener('submit', async (e) => {
   e.preventDefault();
   if (!state.upload || state.busy) return;
   if (state.serverMissing) return showError(SERVER_MISSING);
+  if (state.setupProblem) return showError(state.setupProblem);
   const mode = els.form.elements.mode.value;
   const quality = els.form.elements.quality.value;
   if (state.accessRequired && !accessCode()) {
@@ -214,7 +220,9 @@ els.form.addEventListener('submit', async (e) => {
     await buildStems(output, file.name);
     showResults(mode);
   } catch (err) {
-    showError(friendly(err));
+    let message = friendly(err);
+    if (/client token/i.test(err?.message || '')) message = (await uploadDiagnosis()) || message;
+    showError(message);
   } finally {
     setBusy(false);
   }
@@ -508,13 +516,25 @@ function setBusy(busy) {
   for (const input of els.quality.querySelectorAll('input')) input.disabled = busy;
 }
 
+// The Blob client hides why the server refused an upload, so ask the server.
+async function uploadDiagnosis() {
+  try {
+    const res = await fetch('api/upload', { headers: { 'x-access-code': accessCode() } });
+    const { problem } = await res.json();
+    if (/access code/i.test(problem || '')) els.codeRow.hidden = false;
+    return problem || null;
+  } catch {
+    return null;
+  }
+}
+
 function friendly(err) {
   const msg = err?.message || String(err);
   if (/access code/i.test(msg)) {
     els.codeRow.hidden = false;
     return 'That access code was not accepted. Check it and try again.';
   }
-  if (/client token/i.test(msg)) return 'The upload could not start. Check your connection and try again.';
+  if (/client token/i.test(msg)) return 'The server refused the upload. Try again, and if it keeps happening, check the api/upload logs in Vercel.';
   if (/decode/i.test(msg) || err?.name === 'EncodingError') {
     return 'Your browser could not read the separated tracks. Try again in Chrome, Edge or Firefox.';
   }
