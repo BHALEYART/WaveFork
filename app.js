@@ -1,5 +1,4 @@
-import { upload, uploadPresigned } from './vendor/blob-client.js'; // bundled @vercel/blob@2.8.2 client
-import { createMix, addInto, channelsOf, encodeWav, computePeaks } from './audio.js';
+import { createMix, addInto, encodeWav, computePeaks } from './audio.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -15,9 +14,6 @@ const els = {
   sourceWave: $('#sourceWave'),
   lanes: $('#lanes'),
   form: $('#controls'),
-  quality: $('.choice.quality'),
-  codeRow: $('#codeRow'),
-  code: $('#code'),
   go: $('#go'),
   status: $('#status'),
   statusText: $('#statusText'),
@@ -30,83 +26,25 @@ const els = {
   audio: $('#audio'),
 };
 
-const MAX_BYTES = 200 * 1024 * 1024; // matches api/upload.js
-const MAX_VIDEO_BYTES = 500 * 1024 * 1024; // read locally, never uploaded
-const POLL_MS = 2500;
-const POLL_LIMIT_MS = 20 * 60 * 1000;
-const INSTRUMENT_STEMS = ['drums', 'bass', 'other', 'guitar', 'piano'];
+const SAMPLE_RATE = 44100; // what the Demucs model expects
+const MAX_SECONDS = 20 * 60; // keeps memory use reasonable on ordinary machines
+const MAX_AUDIO_BYTES = 200 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 500 * 1024 * 1024;
 const COLORS = { vocals: '#FF3B3B', instrumental: '#DC143C', source: '#A38E90' };
 const AUDIO_EXT = /\.(mp3|wav|flac|m4a|aac|ogg|oga|opus|aif|aiff)$/i;
 const VIDEO_EXT = /\.(mp4|m4v|mov|webm|mkv)$/i;
-const SERVER_MISSING = "Splitting isn't available at this address because WaveFork's server isn't running here. Open WaveFork from its Vercel address instead.";
 
 const state = {
-  file: null,   // what the user picked (audio or video)
-  upload: null, // the audio that gets uploaded
+  file: null,  // what the user picked (audio or video)
+  audio: null, // its soundtrack at 44.1 kHz: { left, right, duration }
   sourcePeaks: null,
   stems: null, // { vocals: { url, peaks, duration, filename }, instrumental: {...} }
   current: null,
   busy: false,
-  accessRequired: false,
-  serverMissing: false,
-  setupProblem: null,
-  uploadMode: null, // 'token' or 'presigned', depending on how the Blob store is connected
 };
 
-let audioCtx;
-function ctx() {
-  audioCtx ??= new (window.AudioContext || window.webkitAudioContext)();
-  return audioCtx;
-}
-
-// ---------- Access code ----------
-
-function storedCode() {
-  try { return localStorage.getItem('wavefork-code') || ''; } catch { return ''; }
-}
-function saveCode(code) {
-  try { localStorage.setItem('wavefork-code', code); } catch { /* storage unavailable */ }
-}
-function accessCode() {
-  return els.code.value.trim();
-}
-
-// Relative paths so the app works wherever it's hosted, root or subfolder.
-fetch('api/config')
-  .then((r) => {
-    if (!r.ok) throw new Error(String(r.status));
-    return r.json();
-  })
-  .then(({ accessRequired, uploadMode, setupProblem }) => {
-    state.accessRequired = accessRequired;
-    state.uploadMode = uploadMode;
-    if (accessRequired) {
-      els.codeRow.hidden = false;
-      els.code.value = storedCode();
-    }
-    if (setupProblem) {
-      state.setupProblem = setupProblem;
-      showError(setupProblem);
-    }
-  })
-  .catch(() => {
-    // Static hosts (e.g. GitHub Pages) can't run the api/ functions.
-    state.serverMissing = true;
-    showError(SERVER_MISSING);
-  });
-
-async function api(path, options = {}) {
-  const res = await fetch(path, {
-    ...options,
-    headers: { 'Content-Type': 'application/json', 'x-access-code': accessCode(), ...options.headers },
-  });
-  const data = await res.json().catch(() => ({}));
-  if (res.status === 401) {
-    els.codeRow.hidden = false;
-    throw new Error('Enter the access code to use WaveFork.');
-  }
-  if (!res.ok) throw new Error(data.error || `Request failed (${res.status}).`);
-  return data;
+if (!('Worker' in window) || typeof WebAssembly !== 'object') {
+  showError("This browser can't run the separation. Try a recent version of Chrome, Edge, Firefox or Safari.");
 }
 
 // ---------- Choosing a file ----------
@@ -122,6 +60,15 @@ els.drop.addEventListener('drop', (e) => {
   pickFile(e.dataTransfer.files[0]);
 });
 
+// Decode straight to 44.1 kHz stereo, whatever the file's own rate is.
+async function decodeForModel(file) {
+  const decoder = new OfflineAudioContext(2, 1, SAMPLE_RATE);
+  const buf = await decoder.decodeAudioData(await file.arrayBuffer());
+  const left = buf.getChannelData(0);
+  const right = buf.numberOfChannels > 1 ? buf.getChannelData(1) : left;
+  return { left, right, duration: buf.duration };
+}
+
 async function pickFile(file) {
   if (!file || state.busy) return;
   const isVideo = file.type.startsWith('video/') || VIDEO_EXT.test(file.name);
@@ -129,7 +76,7 @@ async function pickFile(file) {
   if (!isAudio && !isVideo) {
     return showError(`${file.name} isn't an audio or video file. Choose an MP3, WAV, FLAC, M4A, MP4, MOV or WebM.`);
   }
-  if (isAudio && file.size > MAX_BYTES) {
+  if (isAudio && file.size > MAX_AUDIO_BYTES) {
     return showError(`${file.name} is ${mb(file.size)}. The limit for audio is 200 MB, so try an MP3 or a shorter track.`);
   }
   if (isVideo && file.size > MAX_VIDEO_BYTES) {
@@ -137,7 +84,7 @@ async function pickFile(file) {
   }
 
   state.file = file;
-  state.upload = isAudio ? file : null;
+  state.audio = null;
   state.sourcePeaks = null;
   hideStatus();
   els.drop.hidden = true;
@@ -145,155 +92,122 @@ async function pickFile(file) {
   els.track.dataset.state = 'source';
   els.fileName.textContent = file.name;
   els.fileMeta.textContent = mb(file.size);
-  els.go.disabled = isVideo;
+  els.go.disabled = true;
   clearCanvas(els.sourceWave);
-  if (isVideo) setStatus('Extracting the audio from your video', null);
+  setStatus(isVideo ? 'Reading the audio from your video' : 'Reading your track', null);
 
-  let buf;
+  let audio;
   try {
-    buf = await ctx().decodeAudioData(await file.arrayBuffer());
+    audio = await decodeForModel(file);
   } catch {
     if (state.file !== file) return;
-    if (isVideo) {
-      state.file = null;
-      return showError(`Your browser couldn't read the audio in ${file.name}. Try Chrome or Firefox, or export the audio from the video first.`);
-    }
-    return; // The browser can't preview this audio format; Demucs may still handle it.
+    state.file = null;
+    return showError(isVideo
+      ? `Your browser couldn't read the audio in ${file.name}. Try Chrome or Firefox, or export the audio from the video first.`
+      : `Your browser couldn't read ${file.name}. Try converting it to MP3 or WAV first.`);
   }
   if (state.file !== file) return; // a newer pick replaced this one
 
-  state.sourcePeaks = computePeaks(channelsOf(buf));
-  drawWave(els.sourceWave, state.sourcePeaks, COLORS.source);
-
-  if (isAudio) {
-    els.fileMeta.textContent = `${clock(buf.duration)}, ${mb(file.size)}`;
-    return;
-  }
-
-  // Only the soundtrack is uploaded; the video never leaves the device.
-  const wav = encodeWav({ channels: channelsOf(buf), sampleRate: buf.sampleRate, length: buf.length });
-  if (wav.byteLength > MAX_BYTES) {
+  if (audio.duration > MAX_SECONDS) {
     state.file = null;
-    return showError(`The audio in ${file.name} runs ${clock(buf.duration)}, which is over the 200 MB upload limit. Try a clip under about 17 minutes.`);
+    return showError(`${file.name} runs ${clock(audio.duration)}. The limit is 20 minutes, so try a shorter clip.`);
   }
-  state.upload = new File([wav], `${baseName(file.name)}.wav`, { type: 'audio/wav' });
-  els.fileMeta.textContent = `${clock(buf.duration)}, audio from video`;
+
+  state.audio = audio;
+  state.sourcePeaks = computePeaks([audio.left, audio.right]);
+  drawWave(els.sourceWave, state.sourcePeaks, COLORS.source);
+  els.fileMeta.textContent = isVideo ? `${clock(audio.duration)}, audio from video` : `${clock(audio.duration)}, ${mb(file.size)}`;
   hideStatus();
   els.go.disabled = false;
 }
 
-// ---------- Splitting ----------
+// ---------- Splitting (runs in a worker on this device) ----------
+
+let worker = null;
+
+function runSeparation(left, right) {
+  worker ??= new Worker(new URL('./separator.worker.js', import.meta.url), { type: 'module' });
+  const progress = { started: 0, backend: null };
+
+  return new Promise((resolve, reject) => {
+    worker.onmessage = ({ data }) => {
+      if (data.type === 'status') showWorkerStatus(data, progress);
+      else if (data.type === 'done') resolve(data.stems);
+      else if (data.type === 'error') reject(new Error(data.message));
+    };
+    worker.onerror = (e) => {
+      e.preventDefault?.();
+      reject(new Error(e.message || 'The separation stopped unexpectedly.'));
+    };
+    // Send copies so the original stays available for a retry.
+    const l = left.slice();
+    const r = right.slice();
+    worker.postMessage({ type: 'separate', left: l, right: r }, [l.buffer, r.buffer]);
+  });
+}
+
+function showWorkerStatus({ phase, progress: pct, backend }, run) {
+  if (phase === 'downloading') {
+    return setStatus(`Downloading the separation model (one time, about 170 MB) ${pct}%`, pct);
+  }
+  if (phase === 'loading') return setStatus('Loading the separation model', null);
+
+  // separating
+  if (backend) { run.backend = backend; run.started = 0; }
+  if (!run.started) run.started = performance.now();
+  const slow = run.backend === 'wasm' ? '. No GPU is available here, so this takes longer' : '';
+  let eta = '';
+  if (pct >= 5 && pct < 100) {
+    const elapsed = (performance.now() - run.started) / 1000;
+    const left = Math.max(0, elapsed / (pct / 100) - elapsed);
+    eta = left >= 60 ? `, about ${Math.round(left / 60)} min left` : ', under a minute left';
+  }
+  setStatus(`Separating vocals from music ${pct}%${eta}${slow}`, pct);
+}
 
 els.form.addEventListener('submit', async (e) => {
   e.preventDefault();
-  if (!state.upload || state.busy) return;
-  if (state.serverMissing) return showError(SERVER_MISSING);
-  if (state.setupProblem) return showError(state.setupProblem);
+  if (!state.audio || state.busy) return;
   const mode = els.form.elements.mode.value;
-  const quality = els.form.elements.quality.value;
-  if (state.accessRequired && !accessCode()) {
-    els.code.focus();
-    return showError('Enter the access code to use WaveFork.');
-  }
-  saveCode(accessCode());
-  ctx().resume?.();
   setBusy(true);
+  setStatus('Starting', null);
 
   try {
-    const file = state.file;
-    const audio = state.upload; // the file itself, or the soundtrack pulled from a video
-    setStatus('Uploading 0%', 0);
-    const send = state.uploadMode === 'presigned' ? uploadPresigned : upload;
-    const blob = await send(`uploads/${uniqueId()}-${safeName(audio.name)}`, audio, {
-      access: 'public',
-      handleUploadUrl: 'api/upload',
-      clientPayload: accessCode() || null,
-      contentType: audio.type || guessType(audio.name),
-      multipart: audio.size > 8 * 1024 * 1024,
-      onUploadProgress: ({ percentage }) => setStatus(`Uploading ${Math.round(percentage)}%`, percentage),
-    });
-
-    setStatus('Starting separation', null);
-    const { id } = await api('api/separate', {
-      method: 'POST',
-      body: JSON.stringify({ audioUrl: blob.url, quality }),
-    });
-
-    const output = await poll(id, blob.url);
-    await buildStems(output, file.name);
+    const stems = await runSeparation(state.audio.left, state.audio.right);
+    setStatus('Mixing the instrumental', null);
+    await nextFrame();
+    buildStems(stems, state.file.name);
     showResults(mode);
   } catch (err) {
-    let message = friendly(err);
-    if (/client token|presigned url/i.test(err?.message || '')) message = (await uploadDiagnosis()) || message;
-    showError(message);
+    worker?.terminate(); // start fresh next time
+    worker = null;
+    showError(friendly(err));
   } finally {
     setBusy(false);
   }
 });
 
-async function poll(id, blobUrl) {
-  const started = Date.now();
-  const path = `api/status?id=${encodeURIComponent(id)}&blob=${encodeURIComponent(blobUrl)}`;
-  while (Date.now() - started < POLL_LIMIT_MS) {
-    const job = await api(path);
-    if (job.status === 'succeeded') return job.output;
-    if (job.status === 'failed' || job.status === 'canceled') {
-      throw new Error(`Separation failed: ${job.error || 'the model stopped without a result'}. Try again, or try a different file.`);
-    }
-    if (job.status === 'starting') {
-      setStatus('Waiting for a GPU. The first run after a quiet spell can take a minute or two.', null);
-    } else if (job.progress != null) {
-      setStatus(`Separating vocals from music ${job.progress}%`, job.progress);
-    } else {
-      setStatus('Separating vocals from music', null);
-    }
-    await sleep(POLL_MS);
-  }
-  throw new Error('Separation is taking longer than 20 minutes. Try again, or try a shorter track.');
-}
-
-async function fetchStem(url) {
-  const res = await fetch(`api/stem?url=${encodeURIComponent(url)}`, {
-    headers: { 'x-access-code': accessCode() },
-  });
-  if (!res.ok) throw new Error('Could not download a separated track. Try again.');
-  return res.arrayBuffer();
-}
-
-async function buildStems(output, originalName) {
-  if (!output?.vocals) throw new Error('The model finished but returned no vocal track. Try again.');
-  const others = INSTRUMENT_STEMS.filter((name) => output[name]);
-  if (!others.length) throw new Error('The model finished but returned no instrument tracks. Try again.');
-
-  setStatus('Downloading the separated tracks', null);
-  const [vocalBytes, ...otherBytes] = await Promise.all(
-    [output.vocals, ...others.map((name) => output[name])].map(fetchStem),
-  );
-
+// Stems arrive as { left, right } Float32Arrays at 44.1 kHz.
+function buildStems(stems, originalName) {
   const base = baseName(originalName);
+  const asBuffer = (s) => ({ numberOfChannels: 2, length: s.left.length, getChannelData: (c) => (c ? s.right : s.left) });
 
-  // Blob copies the bytes before decodeAudioData detaches the buffer.
-  const vocalFile = new Blob([vocalBytes], { type: 'audio/mpeg' });
-  const vocalBuf = await ctx().decodeAudioData(vocalBytes);
+  const v = stems.vocals;
+  const vocalsWav = new Blob([encodeWav({ channels: [v.left, v.right], sampleRate: SAMPLE_RATE, length: v.left.length })], { type: 'audio/wav' });
   const vocals = {
-    url: URL.createObjectURL(vocalFile),
-    peaks: computePeaks(channelsOf(vocalBuf)),
-    duration: vocalBuf.duration,
-    filename: `${base} (vocals).mp3`,
+    url: URL.createObjectURL(vocalsWav),
+    peaks: computePeaks([v.left, v.right]),
+    duration: v.left.length / SAMPLE_RATE,
+    filename: `${base} (vocals).wav`,
   };
 
-  setStatus('Mixing the instrumental', null);
-  let mix;
-  for (const bytes of otherBytes) {
-    const buf = await ctx().decodeAudioData(bytes); // one at a time to limit memory
-    mix ??= createMix(buf.length, buf.sampleRate);
-    addInto(mix, buf);
-  }
-  const wav = new Blob([encodeWav(mix)], { type: 'audio/wav' });
+  const mix = createMix(v.left.length, SAMPLE_RATE);
+  for (const name of ['drums', 'bass', 'other']) addInto(mix, asBuffer(stems[name]));
+  const instrumentalWav = new Blob([encodeWav(mix)], { type: 'audio/wav' });
   const instrumental = {
-    url: URL.createObjectURL(wav),
+    url: URL.createObjectURL(instrumentalWav),
     peaks: computePeaks(mix.channels),
-    duration: mix.length / mix.sampleRate,
+    duration: mix.length / SAMPLE_RATE,
     filename: `${base} (instrumental).wav`,
   };
 
@@ -307,9 +221,7 @@ function showResults(mode) {
   els.source.hidden = true;
   els.lanes.hidden = false;
   els.track.dataset.state = 'split';
-  els.quality.hidden = true;
   els.go.hidden = true;
-  els.codeRow.hidden = true;
   els.player.hidden = false;
 
   for (const link of $$('.download', els.lanes)) {
@@ -407,17 +319,15 @@ function reset() {
     URL.revokeObjectURL(state.stems.vocals.url);
     URL.revokeObjectURL(state.stems.instrumental.url);
   }
-  Object.assign(state, { file: null, upload: null, sourcePeaks: null, stems: null, current: null });
+  Object.assign(state, { file: null, audio: null, sourcePeaks: null, stems: null, current: null });
   els.file.value = '';
   els.track.dataset.state = 'empty';
   els.drop.hidden = false;
   els.source.hidden = true;
   els.lanes.hidden = true;
   els.player.hidden = true;
-  els.quality.hidden = false;
   els.go.hidden = false;
   els.go.disabled = true;
-  els.codeRow.hidden = !state.accessRequired;
   hideStatus();
 }
 
@@ -512,41 +422,27 @@ function hideStatus() {
 
 function setBusy(busy) {
   state.busy = busy;
-  els.go.disabled = busy || !state.upload;
+  els.go.disabled = busy || !state.audio;
   els.go.textContent = busy ? 'Splitting…' : 'Split track';
   els.changeFile.disabled = busy;
   els.file.disabled = busy;
-  for (const input of els.quality.querySelectorAll('input')) input.disabled = busy;
-}
-
-// The Blob client hides why the server refused an upload, so ask the server.
-async function uploadDiagnosis() {
-  try {
-    const res = await fetch('api/upload', { headers: { 'x-access-code': accessCode() } });
-    const { problem } = await res.json();
-    if (/access code/i.test(problem || '')) els.codeRow.hidden = false;
-    return problem || null;
-  } catch {
-    return null;
-  }
 }
 
 function friendly(err) {
   const msg = err?.message || String(err);
-  if (/access code/i.test(msg)) {
-    els.codeRow.hidden = false;
-    return 'That access code was not accepted. Check it and try again.';
+  if (/memory|allocation|RangeError|out of bounds/i.test(msg) || err?.name === 'RangeError') {
+    return 'Your device ran out of memory while separating. Try a shorter clip, close other tabs, or use a computer.';
   }
-  if (/client token/i.test(msg)) return 'The server refused the upload. Try again, and if it keeps happening, check the api/upload logs in Vercel.';
-  if (/decode/i.test(msg) || err?.name === 'EncodingError') {
-    return 'Your browser could not read the separated tracks. Try again in Chrome, Edge or Firefox.';
+  if (/could not be downloaded/i.test(msg)) return `${msg} Check your connection and try again.`;
+  if (/Failed to fetch|NetworkError|Load failed/i.test(msg)) {
+    return `Part of the separation engine could not be loaded (${msg}). Check your connection and try again.`;
   }
-  return msg;
+  return `Separation failed: ${msg}`;
 }
 
 // ---------- Small utilities ----------
 
-function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+function nextFrame() { return new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0))); }
 
 function baseName(name) { return name.replace(/\.[^.]+$/, '') || 'track'; }
 
@@ -556,21 +452,4 @@ function clock(seconds) {
   if (!Number.isFinite(seconds)) return '0:00';
   const s = Math.floor(seconds);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-}
-
-function uniqueId() {
-  return crypto.randomUUID?.().slice(0, 8) || Math.random().toString(36).slice(2, 10);
-}
-
-function safeName(name) {
-  const clean = name.normalize('NFKD').replace(/[^\w.-]+/g, '-').replace(/-+/g, '-').slice(-80);
-  return clean || 'track.mp3';
-}
-
-function guessType(name) {
-  const ext = (name.match(/\.([^.]+)$/) || [])[1]?.toLowerCase();
-  return {
-    mp3: 'audio/mpeg', wav: 'audio/wav', flac: 'audio/flac', m4a: 'audio/mp4', aac: 'audio/aac',
-    ogg: 'audio/ogg', oga: 'audio/ogg', opus: 'audio/ogg', aif: 'audio/aiff', aiff: 'audio/aiff',
-  }[ext] || 'audio/mpeg';
 }

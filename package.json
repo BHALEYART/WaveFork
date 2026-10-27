@@ -1,19 +1,16 @@
 {
   "name": "wavefork",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "Split any song into vocals and instrumental.",
+  "description": "Split any song into vocals and instrumental, entirely in the browser.",
   "type": "module",
-  "engines": {
-    "node": ">=20"
-  },
   "scripts": {
-    "vendor": "echo \"export { upload, uploadPresigned } from '@vercel/blob/client';\" > _entry.js && esbuild --bundle --format=esm --minify --platform=browser --legal-comments=none --outfile=vendor/blob-client.js _entry.js && rm _entry.js"
-  },
-  "dependencies": {
-    "@vercel/blob": "^2.8.2"
+    "vendor": "node scripts/vendor.js"
   },
   "devDependencies": {
-    "esbuild": "^0.25.0"
+    "@fontsource/chakra-petch": "^5.2.0",
+    "@fontsource/ibm-plex-mono": "^5.2.0",
+    "demucs-web": "1.0.2",
+    "onnxruntime-web": "1.31.1"
   }
 }

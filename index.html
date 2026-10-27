@@ -11,14 +11,12 @@
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="WaveFork">
   <meta property="og:title" content="WaveFork">
-  <meta property="og:description" content="Split any song into vocals and instrumental. Start from a song or a video.">
+  <meta property="og:description" content="Split any song into vocals and instrumental, free and right in your browser. Start from a song or a video.">
   <meta property="og:image" content="og-image.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta name="twitter:card" content="summary_large_image">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="preload" href="fonts/chakra-petch-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="styles.css">
   <script type="module" src="app.js"></script>
 </head>
@@ -45,7 +43,7 @@
         <label class="drop" id="drop">
           <input type="file" id="file" accept="audio/*,video/*,.mp3,.wav,.flac,.m4a,.aac,.ogg,.mp4,.m4v,.mov,.webm,.mkv">
           <span class="drop-main">Drop a song or video here or <u>choose one</u></span>
-          <span class="drop-sub">MP3, WAV, FLAC, M4A, MP4, MOV or WebM. Audio up to 200 MB, video up to 500 MB.</span>
+          <span class="drop-sub">MP3, WAV, FLAC, M4A, MP4, MOV or WebM, up to 20 minutes.</span>
         </label>
 
         <div class="source" id="source" hidden>
@@ -87,15 +85,6 @@
           <label class="opt inst"><input type="radio" name="mode" value="instrumental" checked><span>Instrumental</span></label>
           <label class="opt vox"><input type="radio" name="mode" value="vocals"><span>Vocals</span></label>
         </fieldset>
-        <fieldset class="choice quality">
-          <legend>Quality</legend>
-          <label class="opt"><input type="radio" name="quality" value="fast" checked><span>Fast</span></label>
-          <label class="opt"><input type="radio" name="quality" value="best"><span>Best, slower</span></label>
-        </fieldset>
-        <label class="code" id="codeRow" hidden>
-          <span>Access code</span>
-          <input type="password" id="code" autocomplete="off">
-        </label>
         <button type="submit" class="go" id="go" disabled>Split track</button>
       </form>
 
@@ -115,7 +104,7 @@
       <audio id="audio" preload="auto"></audio>
     </section>
 
-    <p class="fine">Videos stay on your device; only their audio is uploaded, and it's deleted from storage once separation finishes. Expect a little bleed between the halves on dense or heavily reverbed mixes. Only upload music you have the rights to use.</p>
+    <p class="fine">Free, and nothing is uploaded: the separation runs on your device. The first split downloads the separation model (about 170 MB) once; after that it's saved in your browser. A computer with a recent browser is fastest. Expect a little bleed between the halves on dense or heavily reverbed mixes.</p>
   </main>
 </body>
 </html>
