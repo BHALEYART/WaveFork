@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WaveFork</title>
+  <meta name="description" content="Split any song into vocals and instrumental.">
+  <meta name="theme-color" content="#1B1426">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header class="top">
+    <a class="mark" href="/" aria-label="WaveFork home">
+      <svg viewBox="0 0 32 32" aria-hidden="true">
+        <path d="M16 29V17" class="mark-stem"/>
+        <path d="M16 17C16 11 9 11 9 4" class="mark-vox"/>
+        <path d="M16 17C16 11 23 11 23 4" class="mark-inst"/>
+      </svg>
+      WaveFork
+    </a>
+  </header>
+
+  <main>
+    <section class="intro">
+      <h1>Split any song into vocals and instrumental.</h1>
+      <p>Upload a track and pick the half you want to keep. You get both halves either way, so you can switch back and forth once it's done.</p>
+    </section>
+
+    <section class="studio" aria-label="Separate a track">
+      <div class="track" id="track" data-state="empty">
+        <label class="drop" id="drop">
+          <input type="file" id="file" accept="audio/*,.mp3,.wav,.flac,.m4a,.aac,.ogg">
+          <span class="drop-main">Drop an audio file here or <u>choose one</u></span>
+          <span class="drop-sub">MP3, WAV, FLAC, M4A or OGG, up to 60 MB</span>
+        </label>
+
+        <div class="source" id="source" hidden>
+          <div class="lane-head">
+            <span class="lane-name" id="fileName"></span>
+            <span class="lane-meta" id="fileMeta"></span>
+            <button type="button" class="link" id="changeFile">Change file</button>
+          </div>
+          <canvas id="sourceWave" class="wave" aria-hidden="true"></canvas>
+        </div>
+
+        <div class="lanes" id="lanes" hidden>
+          <div class="lane" data-stem="vocals">
+            <div class="lane-head">
+              <button type="button" class="lane-pick" data-stem="vocals" aria-pressed="false">
+                <span class="lane-name">Vocals</span>
+                <span class="lane-meta">Music removed</span>
+              </button>
+              <a class="download" data-stem="vocals" download>Download vocals</a>
+            </div>
+            <canvas class="wave" data-stem="vocals" aria-hidden="true"></canvas>
+          </div>
+          <div class="lane" data-stem="instrumental">
+            <div class="lane-head">
+              <button type="button" class="lane-pick" data-stem="instrumental" aria-pressed="false">
+                <span class="lane-name">Instrumental</span>
+                <span class="lane-meta">Vocals removed</span>
+              </button>
+              <a class="download" data-stem="instrumental" download>Download instrumental</a>
+            </div>
+            <canvas class="wave" data-stem="instrumental" aria-hidden="true"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <form class="controls" id="controls">
+        <fieldset class="choice keep">
+          <legend>Keep</legend>
+          <label class="opt inst"><input type="radio" name="mode" value="instrumental" checked><span>Instrumental</span></label>
+          <label class="opt vox"><input type="radio" name="mode" value="vocals"><span>Vocals</span></label>
+        </fieldset>
+        <fieldset class="choice quality">
+          <legend>Quality</legend>
+          <label class="opt"><input type="radio" name="quality" value="fast" checked><span>Fast</span></label>
+          <label class="opt"><input type="radio" name="quality" value="best"><span>Best, slower</span></label>
+        </fieldset>
+        <label class="code" id="codeRow" hidden>
+          <span>Access code</span>
+          <input type="password" id="code" autocomplete="off">
+        </label>
+        <button type="submit" class="go" id="go" disabled>Split track</button>
+      </form>
+
+      <div class="status" id="status" hidden>
+        <p id="statusText" role="status" aria-live="polite"></p>
+        <div class="bar" aria-hidden="true"><span id="statusBar"></span></div>
+      </div>
+
+      <div class="player" id="player" hidden>
+        <button type="button" class="play" id="play" aria-label="Play">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path class="i-play" d="M7 4.5v15l13-7.5z"/><path class="i-pause" d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>
+        </button>
+        <input type="range" id="seek" min="0" max="1000" value="0" aria-label="Playback position">
+        <span class="time" id="time">0:00 / 0:00</span>
+        <button type="button" class="link" id="restart">Split another track</button>
+      </div>
+      <audio id="audio" preload="auto"></audio>
+    </section>
+
+    <p class="fine">Your upload is deleted from storage once separation finishes. Expect a little bleed between the halves on dense or heavily reverbed mixes. Only upload music you have the rights to use.</p>
+  </main>
+</body>
+</html>

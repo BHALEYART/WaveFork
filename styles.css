@@ -1,0 +1,313 @@
+:root {
+  --bg: #1B1426;
+  --surface: #251C33;
+  --raised: #30253F;
+  --line: #3E3152;
+  --text: #F3EEF8;
+  --muted: #A99CBD;
+  --vox: #FF8FA3;
+  --inst: #6FD3C7;
+  --focus: #FFD27A;
+  --danger: #FF9B85;
+  --radius: 14px;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Bricolage Grotesque", system-ui, sans-serif;
+  font-optical-sizing: auto;
+  font-size: 1.0625rem;
+  line-height: 1.55;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+
+button, input { font: inherit; color: inherit; }
+
+.top, main {
+  width: min(100% - 32px, 760px);
+  margin-inline: auto;
+}
+
+.top { padding: 22px 0 0; }
+
+.mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 1.125rem;
+  letter-spacing: -0.01em;
+}
+.mark svg { width: 28px; height: 28px; fill: none; stroke-width: 3; stroke-linecap: round; }
+.mark-stem { stroke: var(--text); }
+.mark-vox { stroke: var(--vox); }
+.mark-inst { stroke: var(--inst); }
+
+.intro { padding: clamp(40px, 9vw, 88px) 0 32px; }
+
+h1 {
+  margin: 0;
+  max-width: 13ch;
+  font-size: clamp(2.5rem, 7.5vw, 4.5rem);
+  font-weight: 700;
+  font-variation-settings: "wdth" 80;
+  line-height: 0.98;
+  letter-spacing: -0.025em;
+}
+
+.intro p {
+  margin: 20px 0 0;
+  max-width: 52ch;
+  color: var(--muted);
+}
+
+/* Track strip: drop zone → source waveform → forked lanes */
+.track {
+  background: var(--surface);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.drop {
+  position: relative;
+  display: grid;
+  place-items: center;
+  gap: 4px;
+  min-height: 190px;
+  padding: 32px 20px;
+  text-align: center;
+  cursor: pointer;
+  border: 2px dashed var(--line);
+  border-radius: var(--radius);
+  transition: border-color .15s, background-color .15s;
+}
+.drop:hover, .drop.is-over { border-color: var(--muted); background: var(--raised); }
+.drop:focus-within { outline: 2px solid var(--focus); outline-offset: -2px; }
+.drop input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.drop-main { font-size: 1.1875rem; font-weight: 600; }
+.drop-main u { text-decoration-thickness: 1px; text-underline-offset: 4px; }
+.drop-sub { color: var(--muted); font-size: .9375rem; }
+
+.source, .lane { padding: 16px 18px 18px; }
+.lane + .lane { border-top: 1px solid var(--line); }
+
+.lane-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 10px;
+  min-height: 28px;
+}
+.lane-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lane-meta { color: var(--muted); font-size: .9375rem; white-space: nowrap; }
+.source .lane-name { min-width: 0; }
+
+.wave {
+  display: block;
+  width: 100%;
+  height: 84px;
+}
+.lane .wave { cursor: pointer; }
+
+.lane-pick {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.lane-pick .lane-name::before {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 9px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  vertical-align: 0;
+}
+.lane[data-stem="vocals"] .lane-pick { color: var(--vox); }
+.lane[data-stem="instrumental"] .lane-pick { color: var(--inst); }
+.lane-pick[aria-pressed="true"] .lane-name::before { background: currentColor; }
+.lane-pick .lane-meta { color: var(--muted); }
+.lane-pick[aria-pressed="false"] .lane-name { color: var(--muted); }
+
+.download, .link {
+  margin-left: auto;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--text);
+  font-size: .9375rem;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.download:hover, .link:hover:not(:disabled) { color: var(--focus); }
+.link:disabled { opacity: .45; cursor: not-allowed; }
+
+/* The fork: one waveform splits into two lanes, once. */
+.track[data-state="split"] .lane[data-stem="vocals"] { animation: tine-up .7s cubic-bezier(.2,.8,.2,1) both; }
+.track[data-state="split"] .lane[data-stem="instrumental"] { animation: tine-down .7s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes tine-up { from { transform: translateY(45%); opacity: .2; } }
+@keyframes tine-down { from { transform: translateY(-45%); opacity: .2; } }
+
+/* Controls */
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 18px 24px;
+  margin-top: 22px;
+}
+
+.choice {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.choice legend, .code > span {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: .9375rem;
+}
+.choice { display: inline-flex; flex-wrap: wrap; }
+.choice legend { float: left; width: 100%; }
+
+.opt { position: relative; }
+.opt input { position: absolute; opacity: 0; pointer-events: none; }
+.opt span {
+  display: block;
+  padding: 10px 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  font-weight: 600;
+  transition: background-color .15s, color .15s;
+}
+.opt:first-of-type span { border-radius: 10px 0 0 10px; }
+.opt:last-of-type span { border-radius: 0 10px 10px 0; border-left: 0; }
+.opt input:checked + span { background: var(--text); color: var(--bg); border-color: var(--text); }
+.opt.inst input:checked + span { background: var(--inst); border-color: var(--inst); }
+.opt.vox input:checked + span { background: var(--vox); border-color: var(--vox); }
+.opt input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 2px; position: relative; z-index: 1; }
+.opt input:disabled + span { cursor: not-allowed; opacity: .55; }
+
+.code input {
+  width: 11rem;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.go {
+  margin-left: auto;
+  padding: 12px 26px;
+  background: var(--text);
+  color: var(--bg);
+  border: 0;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 1.0625rem;
+  cursor: pointer;
+}
+.go:hover:not(:disabled) { background: var(--focus); }
+.go:disabled { opacity: .4; cursor: not-allowed; }
+
+/* Status */
+.status { margin-top: 22px; }
+.status p { margin: 0 0 10px; }
+.status.is-error p { color: var(--danger); }
+.bar {
+  height: 4px;
+  background: var(--surface);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.bar span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, var(--vox), var(--inst));
+  transition: width .4s ease;
+}
+.bar.is-indeterminate span {
+  width: 30%;
+  animation: sweep 1.4s ease-in-out infinite;
+}
+@keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+
+/* Player */
+.player {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+  margin-top: 22px;
+}
+.play {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  flex: none;
+  background: var(--text);
+  color: var(--bg);
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.play svg { width: 22px; height: 22px; fill: currentColor; }
+.play .i-pause, .play.is-playing .i-play { display: none; }
+.play.is-playing .i-pause { display: inline; }
+.player[data-stem="vocals"] .play { background: var(--vox); }
+.player[data-stem="instrumental"] .play { background: var(--inst); }
+
+#seek {
+  flex: 1 1 200px;
+  accent-color: var(--text);
+}
+.player[data-stem="vocals"] #seek { accent-color: var(--vox); }
+.player[data-stem="instrumental"] #seek { accent-color: var(--inst); }
+.time { color: var(--muted); font-variant-numeric: tabular-nums; font-size: .9375rem; }
+.player .link { margin-left: 0; }
+
+.fine {
+  margin: 56px 0 48px;
+  max-width: 60ch;
+  color: var(--muted);
+  font-size: .9375rem;
+}
+
+@media (max-width: 560px) {
+  .go { width: 100%; margin-left: 0; }
+  .lane-head { flex-wrap: wrap; }
+  .lane-pick .lane-meta { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
